@@ -1,4 +1,4 @@
-from tensor import Tensor
+from tensor.tensor import Tensor
 
 
 if __name__ == "__main__":

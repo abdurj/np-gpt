@@ -9,14 +9,19 @@ class Tensor:
         self.op = _op
         self._prev = set(_children)
         self._backward = lambda: None
+    
+    def __repr__(self):
+        return f"Tensor(\n{self.data}\n)"
+    
+    def shape(self):
+        return self.data.shape
+    
+    def dtype(self):
+        return self.data.dtype
 
     def __add__(self, other):
         other = other if isinstance(other, Tensor) else Tensor(other)
         out = Tensor(self.data + other.data, _children=(self, other), _op='+')
-        
-        # gradients propagate equally through addition
-        # a + b = c
-        # da/dl = da/dc * dc/dl
         """
             Gradients propagate equally through addition
             
@@ -31,21 +36,49 @@ class Tensor:
         out._backward = backward
         
         return out
+
+    # Support right-add as well (e.g., 2 + Tensor)
+    __radd__ = __add__
+
+    def sum(self):
+        """Sum all elements to a scalar Tensor."""
+        out = Tensor(self.data.sum(), _children=(self,), _op='sum')
         
-    def __repr__(self):
-        return f"Tensor(\n{self.data}\n)"
+        def backward():
+            # d(sum)/d(self) = 1, broadcasted to self.shape
+            self.grad += np.ones_like(self.data) * out.grad
+        out._backward = backward
+        return out
     
     def zero_grad(self):
         self.grad *= 0
         
     def backward(self, grad=None):
-        # TODO: collect children and top sort
-        # work backwards and apply backward on children
+        """Backpropagate gradients through the computation graph.
+        If grad is None, assumes this tensor is a scalar and starts with 1.
+        """
+
+        # Simple DFS TopSort
+        topo = []
+        visited = set()
+        def build(v):
+            if v not in visited:
+                visited.add(v)
+                for child in v._prev:
+                    build(child)
+                topo.append(v)
+        build(self)
+
+        # Initialize gradient at the output
         if grad is None:
             if self.data.size != 1:
                 raise ValueError("Grad must be specified for non-scalar tensors")
             grad = np.ones_like(self.data)
         self.grad += grad
+
+        # Traverse in reverse topological order and call each node's backward
+        for v in reversed(topo):
+            v._backward()
         
     # forward numpy semantics
     def __getitem__(self, key):
@@ -59,4 +92,3 @@ class Tensor:
             self.data[key] = value.data
         else:
             self.data[key] = value
-        
