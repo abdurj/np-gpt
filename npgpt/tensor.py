@@ -1,4 +1,5 @@
 import numpy as np
+from utils import unbroadcast_gradient
 
 class Tensor:
     def __init__(self, *args, _children=(), _op='', **kwargs):
@@ -31,15 +32,52 @@ class Tensor:
                     = dc
         """
         def backward():
-            self.grad += out.grad
-            other.grad += out.grad
+            dout = out.grad
+            self.grad += unbroadcast_gradient(dout.copy(), self.shape())
+            other.grad += unbroadcast_gradient(dout.copy(), other.shape())
         out._backward = backward
         
         return out
 
-    # Support right-add as well (e.g., 2 + Tensor)
     __radd__ = __add__
 
+    def __mul__(self, other):
+        other = other if isinstance(other, Tensor) else Tensor(other)
+        out = Tensor(self.data * other.data, _children=(self, other), _op='*')
+        
+        def backward():
+            dout = out.grad
+            self_grad = other.data * dout
+            other_grad = self.data * dout
+            
+            self.grad += unbroadcast_gradient(self_grad, self.shape())
+            other.grad += unbroadcast_gradient(other_grad, other.shape())
+        
+        out._backward = backward
+        return out
+
+    __rmul__ = __mul__
+
+    def __sub__(self, other):
+        # sub can be implemented as self + (-1 * other)
+        return self + (-other)
+    
+    def __pow__(self, exp):
+        out = Tensor(self.data ** exp, _children=(self), _op='**')
+        def backward():
+            dout = out.grad
+            self.grad += (exp * (self.data ** (exp-1))) * dout
+
+        out._backward = backward
+        return out
+    
+    def __truediv__(self, other):
+        # div can be implemented as a combination of other primitives
+        return self * (other ** -1)
+    
+    def __neg__(self):
+        return -1 * self
+    
     def sum(self):
         """Sum all elements to a scalar Tensor."""
         out = Tensor(self.data.sum(), _children=(self,), _op='sum')
@@ -74,8 +112,8 @@ class Tensor:
             if self.data.size != 1:
                 raise ValueError("Grad must be specified for non-scalar tensors")
             grad = np.ones_like(self.data)
+            
         self.grad += grad
-
         # Traverse in reverse topological order and call each node's backward
         for v in reversed(topo):
             v._backward()
