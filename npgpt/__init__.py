@@ -1,3 +1,6 @@
 from .tensor import Tensor
-
-__all__ = ["Tensor"]
+from .utils import reduce_to_shape
+__all__ = [
+    "Tensor",
+    "reduce_to_shape"
+    ]

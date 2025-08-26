@@ -1,5 +1,5 @@
 import numpy as np
-from utils import unbroadcast_gradient
+from .utils import reduce_to_shape
 
 class Tensor:
     def __init__(self, *args, _children=(), _op='', **kwargs):
@@ -23,18 +23,12 @@ class Tensor:
     def __add__(self, other):
         other = other if isinstance(other, Tensor) else Tensor(other)
         out = Tensor(self.data + other.data, _children=(self, other), _op='+')
-        """
-            Gradients propagate equally through addition
-            
-            c = a + b
-            da/dl   = da/dc * dc/dl
-                    = 1 * dc
-                    = dc
-        """
+        
         def backward():
             dout = out.grad
-            self.grad += unbroadcast_gradient(dout.copy(), self.shape())
-            other.grad += unbroadcast_gradient(dout.copy(), other.shape())
+            self.grad += reduce_to_shape(dout.copy(), self.shape()) # * 1
+            other.grad += reduce_to_shape(dout.copy(), other.shape()) # * 1 
+            
         out._backward = backward
         
         return out
@@ -50,8 +44,8 @@ class Tensor:
             self_grad = other.data * dout
             other_grad = self.data * dout
             
-            self.grad += unbroadcast_gradient(self_grad, self.shape())
-            other.grad += unbroadcast_gradient(other_grad, other.shape())
+            self.grad += reduce_to_shape(self_grad, self.shape())
+            other.grad += reduce_to_shape(other_grad, other.shape())
         
         out._backward = backward
         return out
@@ -78,13 +72,24 @@ class Tensor:
     def __neg__(self):
         return -1 * self
     
-    def sum(self):
+    def sum(self, axis=None, keepdims=False, **kwargs):
         """Sum all elements to a scalar Tensor."""
-        out = Tensor(self.data.sum(), _children=(self,), _op='sum')
+        out = Tensor(self.data.sum(axis=axis, keepdims=keepdims, **kwargs), _children=(self,), _op='sum')
         
         def backward():
             # d(sum)/d(self) = 1, broadcasted to self.shape
-            self.grad += np.ones_like(self.data) * out.grad
+            dout = out.grad
+            if axis is None or keepdims == True:
+                # if keepdim == True then we can broadcast dout back to self shape
+                self.grad += np.ones_like(self.data) * dout
+            else:
+                # restore collapsed dimension
+                grad = np.expand_dims(dout, axis=axis)
+                # broadcast through to collapsed dimension, since it got reduced
+                # but gradient flows through all elements equally``
+                grad = np.broadcast_to(grad, self.shape())
+                self.grad += grad 
+                
         out._backward = backward
         return out
     
@@ -118,7 +123,7 @@ class Tensor:
         for v in reversed(topo):
             v._backward()
         
-    # forward numpy semantics
+    # forward numpy slicing semantics
     def __getitem__(self, key):
         result = self.data[key]
         if np.isscalar(result):

@@ -153,7 +153,32 @@ def test_mul_broadcast_forward_backward():
     np_out = nx * nw
     zn = np_out.sum()
     zn.backward()
-
+    
     assert np_allclose(torch_out.detach().numpy(), np_out.data)
     assert np_allclose(tx.grad.numpy(), nx.grad)
     assert np_allclose(tw.grad.numpy(), nw.grad)
+
+    
+def test_verify_broadcast_backward():
+    X = np.array([[1.0, 2.0, 3.0],
+                  [4.0, 5.0, 6.0]], dtype=np.float32)      # (2,3)
+    w = np.array([0.5, -1.0, 2.0], dtype=np.float32)       # (3,) -> broadcast to (2,3)
+    
+    nx = npgpt.Tensor(X)
+    nw = npgpt.Tensor(w)
+    np_out = nx * nw
+    zn = np_out.sum()
+    zn.backward()
+    
+    # Manual backpropagation to verify assumptions
+    dzn = np.ones_like(zn.data)
+    assert np_allclose(dzn, zn.grad)
+    
+    dnp_out = np.ones_like(np_out.data) * dzn
+    assert np_allclose(np_out.grad, dnp_out)
+    
+    dnx = nw.data * dnp_out
+    assert np_allclose(dnx, nx.grad)
+    # nw was broadcast from (3,) to (2,3) --> reduce over the added dim
+    dnw = (nx.data * dnp_out).sum(axis=0)
+    assert np_allclose(dnw, nw.grad)

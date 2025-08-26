@@ -5,7 +5,7 @@ import numpy as np
 # it contributes multiple times to the gradient
 # as a result we need to figure out where it was applied in the forward pass
 # and reduce all of those back to the original spot in the gradient
-def unbroadcast_gradient(grad, dims):
+def reduce_to_shape(grad, dims):
     if len(dims) == 0:
         return grad.sum()
     
