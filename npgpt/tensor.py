@@ -79,7 +79,7 @@ class Tensor:
         def backward():
             # d(sum)/d(self) = 1, broadcasted to self.shape
             dout = out.grad
-            if axis is None or keepdims == True:
+            if axis is None or keepdims:
                 # if keepdim == True then we can broadcast dout back to self shape
                 self.grad += np.ones_like(self.data) * dout
             else:
@@ -93,6 +93,55 @@ class Tensor:
         out._backward = backward
         return out
     
+    def mean(self, axis=None, keepdims=False, **kwargs):
+        """Average all elements down to a scalar Tensor"""
+        out = Tensor(self.data.mean(axis=axis, keepdims=keepdims, **kwargs), _children=(self), _op="mean")
+        
+        def backward():
+            dout = out.grad
+            if axis is None:
+                self.grad += (np.ones_like(self.data) / self.data.size) * dout
+            elif keepdims:
+                # get num elements along the axis it was mean'd over
+                self.grad += (np.ones_like(self.data) / self.data.shape[axis]) * dout
+            else:
+                # restore collapsed dimension
+                grad = np.expand_dims(dout, axis=axis)
+                # broadcast through to collapsed dimension, since it got reduced
+                grad = np.broadcast_to(grad, self.shape())
+                # get num elements along the axis it was mean'd over
+                self.grad += (grad / self.data.shape[axis])
+
+        out._backward = backward
+        return out
+    
+    def transpose(self, axes=None):
+        out = Tensor(self.data.transpose(axes), _children=(self,), _op='transpose')
+        
+        def backward():
+            dout = out.grad
+            if axes is None:
+                self.grad += dout.transpose()
+            else:
+                # invert the axes permutation
+                inv_axes = np.argsort(axes)
+                self.grad += dout.transpose(inv_axes)
+
+        out._backward = backward
+        return out
+
+    T = property(transpose)  # allow x.T as shorthand for x.transpose()
+    
+    def reshape(self, *shape):
+        out = Tensor(self.data.reshape(*shape), _children=(self,), _op='reshape')
+        
+        def backward():
+            dout = out.grad
+            self.grad += dout.reshape(self.shape())
+        
+        out._backward = backward
+        return out
+
     def zero_grad(self):
         self.grad *= 0
         
@@ -126,9 +175,20 @@ class Tensor:
     # forward numpy slicing semantics
     def __getitem__(self, key):
         result = self.data[key]
-        if np.isscalar(result):
-            return result
-        return Tensor(result)
+
+        out = Tensor(result, _children=(self,), _op='slice')
+        
+        def backward():
+            dout = out.grad
+            # Create a zero array of the original shape
+            grad = np.zeros_like(self.data)
+            # Place dout into the correct slice
+            grad[key] = dout
+            self.grad += grad
+        
+        out._backward = backward
+        
+        return out
     
     def __setitem__(self, key, value):
         if isinstance(value, Tensor):
