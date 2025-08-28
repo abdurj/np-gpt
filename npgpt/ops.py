@@ -14,3 +14,14 @@ def relu(t: Tensor):
     out._backward = backward
     return out
     
+def tanh(t: Tensor):
+    out = Tensor(np.tanh(t.data), _children=(t,), _op="tanh")
+    
+    def backward():
+        dout = out.grad
+        # d/dx tanh(x) = 1 - tanh^2(x)
+        dt = (1 - out.data**2) * dout
+        t.grad += dt
+        
+    out._backward = backward
+    return out
