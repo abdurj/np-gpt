@@ -141,7 +141,76 @@ class Tensor:
         
         out._backward = backward
         return out
+    
+    def matmul(self, other):
+        assert isinstance(other, Tensor), "Matmul only supports Tensor @ Tensor"
+        shape = self.shape()
+        other_shape = other.shape()
+        
+        self_data = self.data
+        other_data = other.data
+        if len(shape) == 1:
+            # promote (N,) to (1, N)
+            self_data = self.data.reshape(1, -1)
+        if len(other_shape) == 1:
+            # promote (N,) to (N, 1)
+            other_data = other.data.reshape(-1, 1)
+            
+        result_data = self_data @ other_data
+        if len(shape) == 1:
+            # demote (1, M) back to (M,)
+            result_data = result_data.squeeze(0)
+        if len(other_shape) == 1:
+            # demote (N, 1) back to (N,)
+            result_data = result_data.squeeze(-1)
 
+        out = Tensor(result_data, _children=(self, other), _op='matmul')
+
+        def backward():
+            dout = out.grad
+            
+            if len(shape) == 1:
+                # make it a row vector
+                dout = dout.reshape((1, -1))
+            if len(other_shape) == 1:
+                # make dout a column vector
+                dout = dout.reshape((-1, 1))
+                
+            # ----- Backprop for Self -----
+            if len(other_shape) > 2:
+                # if batched, then we cant transpose, need to swap last two dims
+                other_data_transposed = np.swapaxes(other_data, -2, -1)
+            else:
+                other_data_transposed = other_data.T
+            self_grad = dout @ other_data_transposed
+            
+            if len(shape) == 1:
+                # self_grad is a row vector, so now restore original shape
+                self_grad = self_grad.squeeze(0)
+            
+            # reduce over additional dimensions incase of broadcasting
+            self.grad += reduce_to_shape(self_grad, shape)
+                
+            
+            # ----- Backprop for other -----
+            if len(shape) > 2:
+                # if batched, then we cant transpose, need to swap last two dims
+                self_data_transposed = np.swapaxes(self_data, -2, -1)
+            else:
+                self_data_transposed = self_data.T
+            other_grad = self_data_transposed @ dout
+                
+            if len(other_shape) == 1:
+                # other_grad is a column vector, so restore original shape
+                other_grad = other_grad.squeeze(-1)
+            
+            # reduce over additional dimensions incase of broadcasting
+            other.grad += reduce_to_shape(other_grad, other_shape)
+                
+        out._backward = backward
+        return out
+    __matmul__ = matmul
+    
     def zero_grad(self):
         self.grad *= 0
         
