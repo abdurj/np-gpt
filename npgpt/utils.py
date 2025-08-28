@@ -1,5 +1,9 @@
 import numpy as np
 
+
+def np_allclose(a, b, rtol=1e-5, atol=1e-7):
+    return np.allclose(a, b, rtol=rtol, atol=atol)
+
 # Broadcasting works by replicating the input data over some
 # dimensions. This means that for some value a inside the original tensor
 # it contributes multiple times to the gradient

@@ -1,13 +1,16 @@
 import numpy as np
 
-from tensor import Tensor
+from .tensor import Tensor
 
-def sum(t: Tensor, *args, **kwargs):
-    out = np.sum(t.data, *args, **kwargs)
-    out = Tensor(out, _children=(t, ))
+def relu(t: Tensor):
+    out = Tensor(np.maximum(0, t.data), _children=(t,), _op='ReLU')
     
     def backward():
-        res = np.ones_like(t.data) * out.grad
-    out._backward = backward
+        dout = out.grad
+        mask = (t.data > 0).astype(np.float32)
+        dt = mask * dout
+        t.grad += dt
     
+    out._backward = backward
     return out
+    

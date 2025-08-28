@@ -1,6 +1,12 @@
 from .tensor import Tensor
-from .utils import reduce_to_shape
+from .utils import reduce_to_shape, np_allclose
+from .ops import relu
 __all__ = [
+    # Tensor
     "Tensor",
-    "reduce_to_shape"
+    # Ops
+    "relu",
+    # Utils
+    "reduce_to_shape",
+    "np_allclose"
     ]
