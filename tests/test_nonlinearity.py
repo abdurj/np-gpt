@@ -184,7 +184,89 @@ class TestTanh:
         assert np_allclose(dy, ny.grad)
         
 
-         
+class TestSigmoid:
+    """Tests for sigmoid activation function"""
+    
+    def test_sigmoid_forward_backward(self):
+        """Test sigmoid forward and backward pass with mixed values"""
+        X = np.array([[-2.0, -1.0, 0.0, 1.0, 2.0],
+                      [0.5, -0.5, 1.5, -1.5, 0.0]], dtype=np.float32)
+        
+        # Torch
+        tx = torch.tensor(X, requires_grad=True)
+        torch_out = torch.sigmoid(tx)
+        loss = torch_out.sum()
+        loss.backward()
+        
+        # npgpt
+        nx = npgpt.Tensor(X)
+        np_out = npgpt.sigmoid(nx)
+        np_loss = np_out.sum()
+        np_loss.backward()
+        
+        assert np_allclose(torch_out.detach().numpy(), np_out.data)
+        assert np_allclose(tx.grad.numpy(), nx.grad)
+    
+    def test_sigmoid_chain_operations(self):
+        """Test sigmoid in a chain of operations to verify gradient propagation"""
+        X = np.array([[-1.0, 2.0, -3.0],
+                      [4.0, -5.0, 6.0]], dtype=np.float32)
+        W = np.array([[1.0, -1.0],
+                      [0.5, 0.5],
+                      [-1.0, 1.0]], dtype=np.float32)
+        
+        # Torch: X -> sigmoid -> matmul -> sum
+        tx = torch.tensor(X, requires_grad=True)
+        tw = torch.tensor(W, requires_grad=True)
+        torch_sigmoid = torch.sigmoid(tx)
+        torch_out = torch_sigmoid @ tw
+        loss = torch_out.sum()
+        loss.backward()
+        
+        # npgpt: X -> sigmoid -> matmul -> sum
+        nx = npgpt.Tensor(X)
+        nw = npgpt.Tensor(W)
+        np_sigmoid = npgpt.sigmoid(nx)
+        np_out = np_sigmoid @ nw
+        np_loss = np_out.sum()
+        np_loss.backward()
+        
+        assert np_allclose(torch_out.detach().numpy(), np_out.data)
+        assert np_allclose(tx.grad.numpy(), nx.grad)
+        assert np_allclose(tw.grad.numpy(), nw.grad)
 
+    def test_manual_sigmoid_backward(self):
+        """Manually verify sigmoid gradients by direct backward call"""
+        np.random.seed(123)
         
+        X = np.random.uniform(-2, 2, (2,3))
+        Y = np.random.uniform(-1, 1, (2,3))
         
+        nx = npgpt.Tensor(X)
+        ny = npgpt.Tensor(Y)
+        
+        # Forward Pass
+        nxy = nx * ny # shape (2,3)
+        nsigmoid = npgpt.sigmoid(nxy) # shape (2,3)
+        nout = nsigmoid.sum() # shape (1,)
+        
+        # Backwards Pass
+        nout.backward()
+        
+        # Manual Backward Pass verification
+        dnout = np.ones_like(nout.data) # shape (1,)
+        assert np_allclose(dnout, nout.grad)
+        
+        # gradient distributed over sum
+        dsigmoid = np.ones_like(nsigmoid.data) * dnout # shape (2,3)
+        assert np_allclose(dsigmoid, nsigmoid.grad)
+        
+        # d/dx sigmoid(x) = sigmoid(x) * (1 - sigmoid(x))
+        dxy = nsigmoid.data * (1 - nsigmoid.data) * dsigmoid
+        assert np_allclose(dxy, nxy.grad)
+        
+        # ensure gradient distributed correctly to nx, ny
+        dx = ny.data * dxy
+        dy = nx.data * dxy
+        assert np_allclose(dx, nx.grad)
+        assert np_allclose(dy, ny.grad)
