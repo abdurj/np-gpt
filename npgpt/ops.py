@@ -107,3 +107,34 @@ def layernorm(t: Tensor, gamma: Tensor, beta: Tensor, eps=1e-5):
     out._backward = backward
     
     return out
+
+def softmax(t: Tensor, axis=-1):
+    # numerically stable softmax:
+    # e^(x-max(x)) / sum(e^(x-max(x)))
+    
+    # reduction over the specified axis
+    max_ = np.max(t.data, axis=axis, keepdims=True)
+    
+    # subtract max for numerical stability
+    norm = t.data - max_
+    exp = np.exp(norm)
+    # sum over the specified axis
+    sum_ = np.sum(exp, axis=axis, keepdims=True)
+    
+    # final softmax output
+    out_data = exp / sum_
+    out = Tensor(out_data, _children=(t,), _op="softmax")
+    
+    def backward():
+        dout = out.grad
+        
+        # Softmax gradient formula: softmax_i * (dout_i - sum_j(softmax_j * dout_j))
+        # This is derived from the Jacobian of softmax
+        sum_term = np.sum(out_data * dout, axis=axis, keepdims=True)
+        dt = out_data * (dout - sum_term)
+        
+        t.grad += dt
+    
+    out._backward = backward
+    
+    return out
